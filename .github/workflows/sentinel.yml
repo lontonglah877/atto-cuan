@@ -8,7 +8,18 @@ on:
     - cron: '0 0 * * *'
     # Heartbeat 08:00 WIB = 01:00 UTC
     - cron: '0 1 * * *'
-  workflow_dispatch: {}   # tombol "Run workflow" manual
+  workflow_dispatch:       # manual ATAU dari pemicu eksternal
+    inputs:
+      mode:
+        description: 'cycle | digest | heartbeat'
+        required: false
+        default: 'cycle'
+        type: choice
+        options: [cycle, digest, heartbeat]
+
+concurrency:
+  group: atto-cuan
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -24,10 +35,18 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.ATTO_CUAN_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.ATTO_CUAN_CHAT }}
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
         run: |
-          CRON="${{ github.event.schedule }}"
-          case "$CRON" in
-            "0 0 * * *")  node sentinel.mjs digest ;;
-            "0 1 * * *")  node sentinel.mjs heartbeat ;;
-            *)            node sentinel.mjs cycle ;;
-          esac
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            MODE="${INPUT_MODE:-cycle}"
+          else
+            case "$SCHEDULE" in
+              "0 0 * * *") MODE=digest ;;
+              "0 1 * * *") MODE=heartbeat ;;
+              *)           MODE=cycle ;;
+            esac
+          fi
+          echo "mode=$MODE"
+          node sentinel.mjs "$MODE"
