@@ -1,0 +1,54 @@
+{
+  "version": "1.1.0",
+  "name": "Atto Cuan",
+  "doc": "STRATEGI.md v1.1 TERKUNCI - sumber kebenaran aturan. Perubahan di sini WAJIB dicatat di log keputusan dulu (aturan revisi).",
+  "symbols": {
+    "BTCUSDT": { "enabled": true,  "role": "instrumen utama",    "bucket": "crypto-beta" },
+    "ETHUSDT": { "enabled": true,  "role": "altcoin besar",      "bucket": "crypto-beta" },
+    "PAXGUSDT": { "enabled": false, "role": "konteks saja - sinyal 1H dinonaktifkan (BE 91,6%)", "bucket": "gold" }
+  },
+  "poll": {
+    "interval_minutes": 15,
+    "timeframe": "1h",
+    "closed_candle_only": true,
+    "guardrail_max_deviation_pct": 2.0
+  },
+  "risk": {
+    "max_risk_per_trade_pct": 1.0,
+    "max_open_risk_total_pct": 2.0,
+    "cooldown_hours": 24,
+    "circuit_breaker_daily_loss_R": 2,
+    "bucket_correlation_note": "BTC+ETH korelasi 1H terukur 0.87 = satu bucket risiko"
+  },
+  "strategy_trend_pullback": {
+    "trend_ema_period": 200,
+    "trend_timeframe": "4h",
+    "rsi_period": 14,
+    "rsi_oversold": 30,
+    "atr_period": 14,
+    "sl_atr_mult": 1.5,
+    "tp_atr_mult": 3.0
+  },
+  "backtest_standard": {
+    "fee_modes_pct": [0.0, 0.2, 0.3],
+    "slippage_pct": 0.1,
+    "fill_model": "open candle berikutnya + slippage",
+    "min_total_trades": 100,
+    "min_trades_per_regime": 30,
+    "max_param_variants": 12,
+    "mc_runs": 1000,
+    "adx_trending_min": 25,
+    "adx_sideways_max": 20,
+    "kill_criteria": {
+      "oos_net_return": "<= 0",
+      "profit_factor_net": "< 1.15",
+      "paper_trade_deviation": "> 1.5x",
+      "cumulative_drawdown_R": 6
+    }
+  },
+  "notify": {
+    "digest_wib": "07:00",
+    "heartbeat_wib": "08:00",
+    "review_weekly": "Senin 07:30 WIB"
+  }
+}
