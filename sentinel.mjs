@@ -257,10 +257,29 @@ async function digest() {
   await tgSend(lines.join('\n')); log('digest terkirim');
 }
 
+// ---------- mode: loop (jalan terus: siklus 15 menit + digest 07:00 + heartbeat 08:00 WIB) ----------
+async function loop() {
+  let lastDigest = '', lastHb = '';
+  log('loop mulai — siklus tiap 15 menit');
+  while (true) {
+    const d = nowWIB();
+    const H = d.getUTCHours();
+    const day = d.toISOString().slice(0, 10);
+    if (H === 7 && lastDigest !== day) {
+      try { await digest(); lastDigest = day; } catch (e) { log('digest gagal:', e.message); }
+    }
+    if (H === 8 && lastHb !== day) {
+      try { await heartbeat(); lastHb = day; } catch (e) { log('heartbeat gagal:', e.message); }
+    }
+    try { await cycle(); } catch (e) { log('siklus gagal:', e.message); }
+    await sleep(15 * 60e3);
+  }
+}
+
 // ---------- CLI ----------
 const mode = process.argv[2] || 'once';
 loadEnv();
 if (!process.env.TELEGRAM_BOT_TOKEN) { console.error('TELEGRAM_BOT_TOKEN tidak ada (.env atau env).'); process.exit(1); }
-const fn = { cycle, heartbeat, digest }[mode];
-if (!fn) { console.error('mode: cycle | heartbeat | digest'); process.exit(1); }
+const fn = { cycle, heartbeat, digest, loop }[mode];
+if (!fn) { console.error('mode: cycle | heartbeat | digest | loop'); process.exit(1); }
 fn().then(() => process.exit(0)).catch(e => { console.error('FATAL', e); process.exit(1); });

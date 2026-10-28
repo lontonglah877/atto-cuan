@@ -7,3 +7,5 @@ data/*.sqlite-shm
 .env
 .gh-account
 data/
+loop.log
+loop.pid
