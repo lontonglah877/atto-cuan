@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } fr
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { positionAlerts } from './monitor.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -182,7 +183,10 @@ async function tg(token, method, body) {
   if (!j.ok) throw new Error(`Telegram ${method}: ${j.description || res.status}`);
   return j.result;
 }
-const tgSend = (text) => tg(process.env.TELEGRAM_BOT_TOKEN, 'sendMessage', { chat_id: process.env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML', disable_web_page_preview: true });
+const tgSend = (text) => {
+  if (process.env.DRY_RUN) { log('[DRY_RUN] telegram tidak dikirim:\n' + text); return Promise.resolve(); }
+  return tg(process.env.TELEGRAM_BOT_TOKEN, 'sendMessage', { chat_id: process.env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML', disable_web_page_preview: true });
+};
 const rp = (n) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
 const us = (n) => '$' + n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
@@ -238,7 +242,8 @@ async function heartbeat() {
   const ageMin = state.lastCycle ? Math.round((Date.now() - new Date(state.lastCycle.replace(' WIB', 'Z')).getTime() - 7 * 3600e3) / 60000) : null;
   const stale = ageMin === null ? '🟡 belum ada siklus' : (ageMin > 20 ? `🟡 siklus terakhir ${ageMin} mnt lalu (>20 = cek)` : '🟢');
   const sig24 = state.signals.filter(s => Date.now() - new Date(s.t.replace(' WIB', 'Z')).getTime() - 7 * 3600e3 < 24 * 3600e3).length;
-  await tgSend(`💓 <b>Heartbeat</b>\n${stale === '🟢' ? '🟢 Sistem aktif | API normal' : stale}\n24 jam terakhir: ${sig24} sinyal\nSiklus terakhir: ${state.lastCycle || '—'}`);
+  const openPos = (state.positions || []).length;
+  await tgSend(`💓 <b>Heartbeat</b>\n${stale === '🟢' ? '🟢 Sistem aktif | API normal' : stale}\n24 jam terakhir: ${sig24} sinyal\nPosisi terbuka dipantau: ${openPos}\nSiklus terakhir: ${state.lastCycle || '—'}`);
   log('heartbeat terkirim');
 }
 
@@ -257,7 +262,67 @@ async function digest() {
   await tgSend(lines.join('\n')); log('digest terkirim');
 }
 
-// ---------- mode: loop (jalan terus: siklus 15 menit + digest 07:00 + heartbeat 08:00 WIB) ----------
+// ---------- posisi terbuka (v1.2.0): dicatat manual, dipantau alert-only ----------
+// Catatan: SL/TP default dihitung dari ATR 1H closed candle saat dicatat, sama seperti aturan di strategy.json.
+async function masuk(sym, priceArg, slArg, tpArg) {
+  if (!SYMBOLS.includes(sym)) throw new Error(`simbol tidak aktif: ${sym}`);
+  const entry = Number(priceArg);
+  if (!Number.isFinite(entry) || entry <= 0) throw new Error('harga masuk tidak valid');
+  const S = cfg.strategy_trend_pullback;
+  const ev = await evaluate(sym);
+  const sl = slArg ? Number(slArg) : entry - S.sl_atr_mult * ev.atr;
+  const tp = tpArg ? Number(tpArg) : entry + S.tp_atr_mult * ev.atr;
+  if (!(sl < entry && entry < tp)) throw new Error('urutan harga salah: harus SL < entry < TP');
+  const state = loadState(); state.positions ||= [];
+  if (state.positions.some(p => p.sym === sym)) throw new Error(`${sym} sudah punya posisi terbuka`);
+  const pos = { sym, entry, sl, tp, atr: ev.atr, openedAt: wibStamp(), alerted: { sl: false, tp: false, trend: false }, strategy: strategyHash() };
+  state.positions.push(pos); saveState(state);
+  appendEvent('position_open', pos);
+  log(`posisi dicatat ${sym} entry ${entry} SL ${sl.toFixed(2)} TP ${tp.toFixed(2)}`);
+  await tgSend(`📌 <b>Posisi dicatat: ${sym}</b>\nEntry ${us(entry)}\nSL ${us(sl)}\nTP ${us(tp)}\n<i>Dipantau tiap 5 menit. Hanya alert, tidak ada jual otomatis.</i>`);
+}
+
+async function tutup(sym, priceArg) {
+  const state = loadState(); state.positions ||= [];
+  const pos = state.positions.find(p => p.sym === sym);
+  if (!pos) throw new Error(`tidak ada posisi ${sym}`);
+  state.positions = state.positions.filter(p => p.sym !== sym); saveState(state);
+  appendEvent('position_close', { sym, entry: pos.entry, exit: priceArg ? Number(priceArg) : null, closedAt: wibStamp() });
+  log(`posisi ${sym} ditutup (entry ${pos.entry}, keluar ${priceArg || 'tidak dicatat'})`);
+}
+
+function posisi() {
+  const state = loadState(); const list = state.positions || [];
+  if (!list.length) { log('tidak ada posisi terbuka'); return; }
+  for (const p of list) log(`${p.sym} entry ${p.entry} SL ${p.sl.toFixed(2)} TP ${p.tp.toFixed(2)} sejak ${p.openedAt} alert: ${Object.entries(p.alerted).filter(([, v]) => v).map(([k]) => k).join(',') || '-'}`);
+}
+
+// Dipanggil tiap 5 menit oleh loop. Alert dikirim sekali per jenis per posisi.
+// Flag 'sudah dikirim' hanya ditulis SETELAH Telegram berhasil, supaya alert tidak hilang diam-diam.
+async function monitorOnce() {
+  const state = loadState(); state.positions ||= [];
+  if (!state.positions.length) return;
+  const label = {
+    SL: (p, price) => `🛑 <b>SL TERSENTUH ${p.sym}</b>\nHarga ${us(price)} ≤ SL ${us(p.sl)}`,
+    TP: (p, price) => `🏁 <b>TP TERSENTUH ${p.sym}</b>\nHarga ${us(price)} ≥ TP ${us(p.tp)}`,
+    TREND: (p, price) => `📉 <b>TREN 4H BERBALIK ${p.sym}</b>\nClose 4H di bawah EMA200. Harga ${us(price)}`,
+  };
+  for (const p of state.positions) {
+    try {
+      const price = parseFloat((await binanceTicker(p.sym)).price);
+      const trendUp = (await evaluate(p.sym)).trendUp;
+      for (const type of positionAlerts(p, price, trendUp)) {
+        await tgSend(`${label[type](p, price)}\n<i>Alert saja. Keputusan keluar tetap milikmu.</i>`);
+        p.alerted[type.toLowerCase()] = true;
+        appendEvent('exit_alert', { sym: p.sym, type, price });
+        saveState(state);
+      }
+    } catch (e) { log(`monitor ${p.sym} gagal: ${e.message}`); }
+  }
+  saveState(state);
+}
+
+// ---------- mode: loop (jalan terus: siklus 15 menit + pemantauan 5 menit bila ada posisi + digest 07:00 + heartbeat 08:00 WIB) ----------
 async function loop() {
   let lastDigest = '', lastHb = '';
   log('loop mulai — siklus tiap 15 menit');
@@ -272,9 +337,13 @@ async function loop() {
       try { await heartbeat(); lastHb = day; } catch (e) { log('heartbeat gagal:', e.message); }
     }
     try { await cycle(); } catch (e) { log('siklus gagal:', e.message); }
-    const wait = msToNextQuarter();
-    log(`siklus berikutnya dalam ${Math.round(wait / 1000)} detik`);
-    await sleep(wait);
+    const until = Date.now() + msToNextQuarter();
+    log(`siklus berikutnya dalam ${Math.round((until - Date.now()) / 1000)} detik`);
+    // Di antara dua siklus, cek posisi terbuka tiap 5 menit (tanpa posisi = tidur biasa).
+    while (Date.now() < until) {
+      await sleep(Math.min(5 * 60e3, Math.max(0, until - Date.now())));
+      try { await monitorOnce(); } catch (e) { log('monitor gagal:', e.message); }
+    }
   }
 }
 
@@ -288,9 +357,11 @@ function msToNextQuarter() {
 }
 
 // ---------- CLI ----------
-const mode = process.argv[2] || 'once';
+const cmd = process.argv[2] || 'once';
+const args = process.argv.slice(3);
 loadEnv();
-if (!process.env.TELEGRAM_BOT_TOKEN) { console.error('TELEGRAM_BOT_TOKEN tidak ada (.env atau env).'); process.exit(1); }
-const fn = { cycle, heartbeat, digest, loop }[mode];
-if (!fn) { console.error('mode: cycle | heartbeat | digest | loop'); process.exit(1); }
-fn().then(() => process.exit(0)).catch(e => { console.error('FATAL', e); process.exit(1); });
+if (!process.env.TELEGRAM_BOT_TOKEN && !process.env.DRY_RUN) { console.error('TELEGRAM_BOT_TOKEN tidak ada (.env atau env).'); process.exit(1); }
+const fns = { cycle, heartbeat, digest, loop, monitor: monitorOnce, masuk: () => masuk(...args), tutup: () => tutup(...args), posisi };
+const fn = fns[cmd];
+if (!fn) { console.error('perintah: cycle | heartbeat | digest | loop | monitor | masuk SYM HARGA [SL TP] | tutup SYM [HARGA_KELUAR] | posisi'); process.exit(1); }
+Promise.resolve().then(() => fn()).then(() => process.exit(0)).catch(e => { console.error('FATAL', e); process.exit(1); });
