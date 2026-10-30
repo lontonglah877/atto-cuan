@@ -272,8 +272,19 @@ async function loop() {
       try { await heartbeat(); lastHb = day; } catch (e) { log('heartbeat gagal:', e.message); }
     }
     try { await cycle(); } catch (e) { log('siklus gagal:', e.message); }
-    await sleep(15 * 60e3);
+    const wait = msToNextQuarter();
+    log(`siklus berikutnya dalam ${Math.round(wait / 1000)} detik`);
+    await sleep(wait);
   }
+}
+
+// Tidur sampai batas 15 menit berikutnya (:00 :15 :30 :45 WIB), bukan "15 menit setelah siklus selesai".
+// Lama siklus atau timer yang tertunda tidak lagi menggeser jadwal; jadwal dikunci ke jam dinding.
+// Offset WIB (+7 jam) kelipatan 15 menit, jadi modulo di nowWIB() sejajar dengan perempat jam WIB.
+function msToNextQuarter() {
+  const Q = 15 * 60e3;
+  const into = nowWIB().getTime() % Q;
+  return Q - into + 2000; // +2 detik supaya pasti sudah melewati batas
 }
 
 // ---------- CLI ----------
