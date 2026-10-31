@@ -205,11 +205,18 @@ async function cycle() {
 
       if (sym === 'BTCUSDT') {
         anomaly = await guardrailBTC({ last: usd.last });
-        if (anomaly.ok) lines.push(`Guardrail Indodax vs Binance×kurs: dev ${anomaly.dev}% ✓`);
+        const wasOk = state.guardrailOk !== false; // status siklus sebelumnya (default: normal)
+        if (anomaly.ok) {
+          lines.push(`Guardrail Indodax vs Binance×kurs: dev ${anomaly.dev}% ✓`);
+          if (!wasOk) await tgSend(`✅ <b>Guardrail normal kembali</b>\nDev ${anomaly.dev}%. Sinyal boleh dihitung lagi.`);
+          state.guardrailOk = true;
+        }
         else {
           lines.push(`⚠️ <b>DATA_ANOMALY</b>: Indodax ${rp(anomaly.lastIDR)} vs Binance×kurs ${rp(anomaly.expect)} (dev ${anomaly.dev}% > 2%). Sinyal DITAHAN.`);
           appendEvent('anomaly', anomaly); state.anomalies.push({ t: wibStamp(), ...anomaly }); saveState(state);
-          await tgSend(`🚨 <b>DATA_ANOMALY</b>\nIndodax: ${rp(anomaly.lastIDR)}\nBinance×kurs: ${rp(anomaly.expect)}\nDev: ${anomaly.dev}%\nSinyal ditahan sampai data normal.`);
+          state.guardrailOk = false;
+          // Alert ke Telegram hanya saat status berubah normal→anomali. Siklus berikutnya tetap dicatat di log & events.
+          if (wasOk) await tgSend(`🚨 <b>DATA_ANOMALY</b>\nIndodax: ${rp(anomaly.lastIDR)}\nBinance×kurs: ${rp(anomaly.expect)}\nDev: ${anomaly.dev}%\nSinyal ditahan sampai data normal.`);
         }
       }
       if (!anomaly || anomaly.ok) {
