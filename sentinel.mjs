@@ -269,24 +269,34 @@ async function digest() {
   await tgSend(lines.join('\n')); log('digest terkirim');
 }
 
-// ---------- posisi terbuka (v1.2.0): dicatat manual, dipantau alert-only ----------
-// Catatan: SL/TP default dihitung dari ATR 1H closed candle saat dicatat, sama seperti aturan di strategy.json.
+// ---------- posisi terbuka (v1.3.0): venue eksekusi = Indodax (IDR). Sinyal tetap dari Binance. ----------
+const INDODAX_PAIR = { BTCUSDT: 'btcidr', ETHUSDT: 'ethidr' };
+async function indodaxPrice(sym) {
+  const pair = INDODAX_PAIR[sym];
+  if (!pair) throw new Error(`tidak ada pair Indodax untuk ${sym}`);
+  const t = await jget1(`https://indodax.com/api/ticker/${pair}`);
+  const p = parseFloat(t.ticker.last);
+  if (!Number.isFinite(p) || p <= 0) throw new Error(`harga Indodax ${pair} tidak valid`);
+  return p;
+}
+// Entry diisi harga IDR yang kamu lihat di Indodax. SL/TP default = entry × (1 ∓ mult × ATR%), ATR% dari Binance 1H.
 async function masuk(sym, priceArg, slArg, tpArg) {
   if (!SYMBOLS.includes(sym)) throw new Error(`simbol tidak aktif: ${sym}`);
   const entry = Number(priceArg);
   if (!Number.isFinite(entry) || entry <= 0) throw new Error('harga masuk tidak valid');
   const S = cfg.strategy_trend_pullback;
   const ev = await evaluate(sym);
-  const sl = slArg ? Number(slArg) : entry - S.sl_atr_mult * ev.atr;
-  const tp = tpArg ? Number(tpArg) : entry + S.tp_atr_mult * ev.atr;
+  const atrPct = ev.atr / ev.entry; // ATR sebagai proporsi harga, berlaku di skala IDR juga
+  const sl = slArg ? Number(slArg) : entry * (1 - S.sl_atr_mult * atrPct);
+  const tp = tpArg ? Number(tpArg) : entry * (1 + S.tp_atr_mult * atrPct);
   if (!(sl < entry && entry < tp)) throw new Error('urutan harga salah: harus SL < entry < TP');
   const state = loadState(); state.positions ||= [];
   if (state.positions.some(p => p.sym === sym)) throw new Error(`${sym} sudah punya posisi terbuka`);
-  const pos = { sym, entry, sl, tp, atr: ev.atr, openedAt: wibStamp(), alerted: { sl: false, tp: false, trend: false }, strategy: strategyHash() };
+  const pos = { sym, venue: 'indodax', currency: 'IDR', entry, sl, tp, atrPctAtEntry: +(atrPct * 100).toFixed(3), openedAt: wibStamp(), alerted: { sl: false, tp: false, trend: false }, strategy: strategyHash() };
   state.positions.push(pos); saveState(state);
   appendEvent('position_open', pos);
-  log(`posisi dicatat ${sym} entry ${entry} SL ${sl.toFixed(2)} TP ${tp.toFixed(2)}`);
-  await tgSend(`📌 <b>Posisi dicatat: ${sym}</b>\nEntry ${us(entry)}\nSL ${us(sl)}\nTP ${us(tp)}\n<i>Dipantau tiap 5 menit. Hanya alert, tidak ada jual otomatis.</i>`);
+  log(`posisi dicatat ${sym} (Indodax) entry ${rp(entry)} SL ${rp(sl)} TP ${rp(tp)}`);
+  await tgSend(`📌 <b>Posisi dicatat: ${sym} (Indodax)</b>\nEntry ${rp(entry)}\nSL ${rp(sl)}\nTP ${rp(tp)}\n<i>Dipantau tiap 5 menit pakai harga Indodax. Hanya alert, tidak ada jual otomatis.</i>`);
 }
 
 async function tutup(sym, priceArg) {
@@ -310,14 +320,14 @@ async function monitorOnce() {
   const state = loadState(); state.positions ||= [];
   if (!state.positions.length) return;
   const label = {
-    SL: (p, price) => `🛑 <b>SL TERSENTUH ${p.sym}</b>\nHarga ${us(price)} ≤ SL ${us(p.sl)}`,
-    TP: (p, price) => `🏁 <b>TP TERSENTUH ${p.sym}</b>\nHarga ${us(price)} ≥ TP ${us(p.tp)}`,
-    TREND: (p, price) => `📉 <b>TREN 4H BERBALIK ${p.sym}</b>\nClose 4H di bawah EMA200. Harga ${us(price)}`,
+    SL: (p, price) => `🛑 <b>SL TERSENTUH ${p.sym} (Indodax)</b>\nHarga ${rp(price)} ≤ SL ${rp(p.sl)}`,
+    TP: (p, price) => `🏁 <b>TP TERSENTUH ${p.sym} (Indodax)</b>\nHarga ${rp(price)} ≥ TP ${rp(p.tp)}`,
+    TREND: (p, price) => `📉 <b>TREN 4H BERBALIK ${p.sym}</b>\nClose 4H Binance di bawah EMA200. Harga Indodax ${rp(price)}`,
   };
   for (const p of state.positions) {
     try {
-      const price = parseFloat((await binanceTicker(p.sym)).price);
-      const trendUp = (await evaluate(p.sym)).trendUp;
+      const price = await indodaxPrice(p.sym);
+      const trendUp = (await evaluate(p.sym)).trendUp; // sinyal tren tetap dari Binance
       for (const type of positionAlerts(p, price, trendUp)) {
         await tgSend(`${label[type](p, price)}\n<i>Alert saja. Keputusan keluar tetap milikmu.</i>`);
         p.alerted[type.toLowerCase()] = true;

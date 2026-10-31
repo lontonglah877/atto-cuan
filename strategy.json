@@ -32,6 +32,8 @@
   "exit_monitor": {
     "status": "alert_only",
     "auto_action": false,
+    "price_venue": "indodax (IDR, pair btcidr/ethidr)",
+    "signal_source": "binance (1H closed candle, 4H EMA200)",
     "check_interval_min_when_open": 5,
     "sl_hit": "harga <= SL posisi",
     "tp_hit": "harga >= TP posisi",
