@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.1",
   "name": "Atto Cuan",
   "doc": "STRATEGI.md v1.1 TERKUNCI - sumber kebenaran aturan. Perubahan di sini WAJIB dicatat di log keputusan dulu (aturan revisi).",
   "symbols": {
@@ -11,7 +11,8 @@
     "interval_minutes": 15,
     "timeframe": "1h",
     "closed_candle_only": true,
-    "guardrail_max_deviation_pct": 2.0
+    "guardrail_max_deviation_pct": 2.0,
+    "guardrail_recover_pct": 1.8
   },
   "risk": {
     "max_risk_per_trade_pct": 1.0,

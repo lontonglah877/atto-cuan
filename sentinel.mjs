@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } fr
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { positionAlerts } from './monitor.mjs';
+import { positionAlerts, nextGuardState } from './monitor.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
@@ -205,21 +205,30 @@ async function cycle() {
 
       if (sym === 'BTCUSDT') {
         anomaly = await guardrailBTC({ last: usd.last });
-        const wasOk = state.guardrailOk !== false; // status siklus sebelumnya (default: normal)
-        if (anomaly.ok) {
-          lines.push(`Guardrail Indodax vs Binance×kurs: dev ${anomaly.dev}% ✓`);
-          if (!wasOk) await tgSend(`✅ <b>Guardrail normal kembali</b>\nDev ${anomaly.dev}%. Sinyal boleh dihitung lagi.`);
+        const prevOk = state.guardrailOk !== false; // status siklus sebelumnya (default: normal)
+        const enter = cfg.poll.guardrail_max_deviation_pct, recover = cfg.poll.guardrail_recover_pct ?? enter;
+        // Histeresis: masuk anomali > 2,0%; keluar hanya < 1,8%. Data gagal tidak mengubah status.
+        const nowOk = nextGuardState(prevOk, anomaly.dev ?? null, enter, recover);
+        if (anomaly.dev === null || anomaly.dev === undefined) {
+          lines.push(`Guardrail: data tidak tersedia (${anomaly.note || anomaly.reason || 'gagal'}). Status tetap: ${prevOk ? 'normal' : 'anomali'}.`);
+        }
+        if (nowOk) {
+          if (anomaly.dev !== null && anomaly.dev !== undefined) lines.push(`Guardrail Indodax vs Binance×kurs: dev ${anomaly.dev}% ✓`);
+          if (!prevOk) await tgSend(`✅ <b>Guardrail normal kembali</b>\nDev ${anomaly.dev}% (di bawah ${recover}%). Sinyal boleh dihitung lagi.`);
           state.guardrailOk = true;
         }
         else {
-          lines.push(`⚠️ <b>DATA_ANOMALY</b>: Indodax ${rp(anomaly.lastIDR)} vs Binance×kurs ${rp(anomaly.expect)} (dev ${anomaly.dev}% > 2%). Sinyal DITAHAN.`);
-          appendEvent('anomaly', anomaly); state.anomalies.push({ t: wibStamp(), ...anomaly }); saveState(state);
+          if (anomaly.dev !== null && anomaly.dev !== undefined) {
+            lines.push(`⚠️ <b>DATA_ANOMALY</b>: Indodax ${rp(anomaly.lastIDR)} vs Binance×kurs ${rp(anomaly.expect)} (dev ${anomaly.dev}%). Sinyal DITAHAN.`);
+            appendEvent('anomaly', anomaly); state.anomalies.push({ t: wibStamp(), ...anomaly });
+          }
           state.guardrailOk = false;
-          // Alert ke Telegram hanya saat status berubah normal→anomali. Siklus berikutnya tetap dicatat di log & events.
-          if (wasOk) await tgSend(`🚨 <b>DATA_ANOMALY</b>\nIndodax: ${rp(anomaly.lastIDR)}\nBinance×kurs: ${rp(anomaly.expect)}\nDev: ${anomaly.dev}%\nSinyal ditahan sampai data normal.`);
+          // Alert ke Telegram hanya saat transisi normal→anomali.
+          if (prevOk && anomaly.dev !== null && anomaly.dev !== undefined) await tgSend(`🚨 <b>DATA_ANOMALY</b>\nIndodax: ${rp(anomaly.lastIDR)}\nBinance×kurs: ${rp(anomaly.expect)}\nDev: ${anomaly.dev}%\nSinyal ditahan sampai dev di bawah ${recover}%.`);
         }
+        saveState(state);
       }
-      if (!anomaly || anomaly.ok) {
+      if (state.guardrailOk !== false) {
         const ev = await evaluate(sym);
         const tag = ev.trigger ? '🎯 <b>TRIGGER</b>' : '—';
         lines.push(`${tag} RSI ${ev.rsi} (prev ${ev.rsiPrev}) | tren4H ${ev.trendUp ? '↑' : '↓'} | SL ${ev.slPct}% (BE win ${ev.beWin}%)`);
