@@ -13,13 +13,17 @@ Spesifikasi lengkap: `STRATEGI.md` v1.1 (terkunci).
 
 ## Menjalankan lokal (uji)
 ```
-cp .env.contoh .env   # isi token & chat id
-node sentinel.mjs cycle      # satu siklus penuh
-node sentinel.mjs digest     # digest harian
-node sentinel.mjs heartbeat  # heartbeat
+cp .env.contoh .env   # isi TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID (jangan di-commit)
+node src/sentinel.v150.mjs   # satu siklus penuh (fetch → compute → lock → commit → monitor → kirim outbox)
+npm test                     # tes unit + e2e
 ```
 
-## Deployment (GitHub Actions, gratis)
+## Deployment
+
+Siklus dijalankan Windows Task Scheduler (`AttoCuan-Cycle`, tiap 15 menit) lewat `run-cycle.bat`.
+Tidak ada workflow GitHub Actions dan tidak ada loop latar belakang: kedua jalur v1.3.1 sudah dihapus.
+
+## Deployment (riwayat v1.3.1, tidak lagi dipakai)
 1. Push repo ini ke GitHub (publik — tidak ada rahasia di kode).
 2. Settings → Secrets and variables → Actions → New repository secret:
    - `ATTO_CUAN_TOKEN` = token bot dari @BotFather
