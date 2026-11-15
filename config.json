@@ -1,12 +1,168 @@
 {
-  "env": {
-    "TELEGRAM_BOT_TOKEN": "diisi sebagai GitHub Secret ATTO_CUAN_TOKEN (jangan pernah ditulis di file ini)",
-    "TELEGRAM_CHAT_ID": "diisi sebagai GitHub Secret ATTO_CUAN_CHAT",
-    "INDODAX_BASE": "https://indodax.com/api",
-    "BINANCE_BASES": ["https://api.binance.com", "https://data-api.binance.vision"],
-    "FX_BASE": "https://api.frankfurter.app"
+  "schemaVersion": "1.5.0",
+  "operationalTimezone": "Asia/Makassar",
+  "codeVersion": "atto-cuan/1.5.0",
+  "sources": {
+    "binance": {
+      "endpoints": [
+        "https://data-api.binance.vision",
+        "https://api.binance.com"
+      ],
+      "verifiedAt": "2026-11-14T11:47:56.306Z",
+      "docs": "https://developers.binance.com/docs/binance-spot-api-docs",
+      "notes": "REST klines 1h/4h, ticker/bookTicker, /api/v3/time. Data pasar publik; tidak ada endpoint privat."
+    },
+    "indodax": {
+      "endpoints": [
+        "https://indodax.com/api"
+      ],
+      "verifiedAt": "2026-11-14T11:47:56.306Z",
+      "docs": "https://indodax.com/downloads/BITCOIN_IDR_API_SPECS.pdf",
+      "notes": "ticker, depth, trades, server_time, pairs. Read-only."
+    }
   },
-  "windows_local_test": {
-    "note": "Untuk uji di laptop: buat file .env lokal (TIDAK di-commit, ada di .gitignore) berisi TELEGRAM_BOT_TOKEN=... dan TELEGRAM_CHAT_ID=..."
+  "maxAgeSec": {
+    "ticker": 30,
+    "orderBook": 30,
+    "usdtIdr": 30
+  },
+  "candleGraceSec": {
+    "1m": 150,
+    "1h": 900,
+    "4h": 900
+  },
+  "candleHistory": {
+    "minClosed": 500,
+    "target": 1000
+  },
+  "http": {
+    "timeoutMs": 8000,
+    "cycleBudgetMs": 45000,
+    "maxRequestsPerCycle": 80,
+    "minIntervalMs": 120
+  },
+  "clock": {
+    "warnMs": 10000,
+    "blockMs": 30000,
+    "rttMaxMs": 2000,
+    "samples": 3,
+    "sampleSpacingMs": 200,
+    "maxSourceDisagreeMs": 2000
+  },
+  "costs": {
+    "takerFeePct": 0.2,
+    "makerFeePct": 0.1,
+    "taxBuyPct": 0,
+    "taxSellPct": 0.21,
+    "slippageEntryPct": 0.05,
+    "slippageExitPct": 0.05,
+    "executionAssumption": "TAKER",
+    "verifiedAt": "2026-11-14T12:05:00.000Z",
+    "notes": "Fee taker/maker Indodax dari /api/pairs. PPh 22 final penjualan 0,21% untuk PPMSE dalam negeri (PMK 50/2025). Penyerahan aset kripto tidak lagi dikenai PPN; PPN 12% x 11/12 hanya atas jasa platform sehingga tercermin di fee exchange. Slippage masukan adalah lantai asuransi yang dinaikkan oleh depth-walk."
+  },
+  "exchangeRules": {
+    "btc_idr": {
+      "tickSize": 1000,
+      "lotStep": 0.00000001,
+      "minQty": 0.0000081,
+      "minNotionalIdr": 10000
+    },
+    "eth_idr": {
+      "tickSize": 1000,
+      "lotStep": 0.00000001,
+      "minQty": 0.00028534,
+      "minNotionalIdr": 10000
+    },
+    "usdt_idr": {
+      "tickSize": 1,
+      "lotStep": 0.00000001,
+      "minQty": 0.5455835,
+      "minNotionalIdr": 10000
+    }
+  },
+  "risk": {
+    "maxRiskPerTradePct": 1,
+    "maxOpenRiskPct": 2,
+    "maxClusterOpenRiskPct": 2,
+    "maxSpotAllocationPct": 35,
+    "minRiskBudgetFraction": 0.5,
+    "minNetRR": 1.2,
+    "maxCostToStopRatio": 0.5,
+    "maxBeWinRatePct": 55,
+    "maxSlippagePct": 0.15,
+    "maxBookParticipationPct": 20,
+    "depthBandPct": 0.5,
+    "dailyLossLimitR": 2,
+    "consecutiveLossLimit": 3,
+    "consecutiveLossPauseHours": 24,
+    "drawdownBreakerPct": 10,
+    "volatilityAbsoluteMaxPct": 4,
+    "equityTtlDays": 7,
+    "allowPyramiding": false
+  },
+  "guardrail": {
+    "thetaInPct": 2,
+    "thetaOutPct": 1.8,
+    "recoverCycles": 3,
+    "maxSpreadPct": {
+      "btc_idr": 0.5,
+      "eth_idr": 0.5
+    },
+    "maxCrossSourceSkewMs": 20000
+  },
+  "signal": {
+    "expiryMinutes": 45,
+    "maxEntryDeviationPct": 0.5,
+    "cooldownHours": 24,
+    "entryReferenceMaxAgeSec": 30
+  },
+  "monitor": {
+    "intervalSecOpen": 60,
+    "intervalSecIdle": 300,
+    "blindMinutes": 5,
+    "trendReArmCandles": 2,
+    "holdingReviewHours": 96,
+    "reminderEveryMin": 15,
+    "reminderCount": 3,
+    "reminderThenEveryMin": 60,
+    "reminderStopHours": 24
+  },
+  "lock": {
+    "maxHoldMs": 2000,
+    "acquireTimeoutMs": 5000,
+    "staleAfterMs": 15000,
+    "hardMaxHoldMs": 60000
+  },
+  "retention": {
+    "eventsMaxMb": 10,
+    "outboxSentDays": 7,
+    "outboxFailedDays": 30,
+    "evaluationsDays": 30,
+    "backupsDaily": 14,
+    "backupsMonthly": 12
+  },
+  "schedule": {
+    "sentinelIntervalMinutes": 15,
+    "sentinelOffsetSec": 5,
+    "candleRetryCount": 3,
+    "candleRetryDelaySec": 10,
+    "maintenanceLocalTime": "03:30",
+    "heartbeatEveryHours": 6,
+    "digestLocalTime": "08:00"
+  },
+  "telegram": {
+    "enabled": false,
+    "allowedUserId": null,
+    "allowedChatId": null,
+    "rateLimitPerMinute": 20,
+    "parseMode": "HTML",
+    "outboxPollSec": 60,
+    "getUpdatesTimeoutSec": 30,
+    "maxMessageChars": 4096
+  },
+  "watchdog": {
+    "pingIntervalSec": 300,
+    "alarmAfterSec": 900,
+    "urlEnv": "ATTO_CUAN_WATCHDOG_URL"
   }
 }

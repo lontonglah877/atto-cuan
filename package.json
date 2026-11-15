@@ -1,0 +1,15 @@
+{
+  "name": "atto-cuan",
+  "version": "1.5.0",
+  "description": "Atto Cuan: sentinel pemantauan read-only BTC/ETH spot. Tidak mengeksekusi order.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test --test-reporter=spec test/",
+    "verify-sources": "node scripts/verify-sources.mjs"
+  },
+  "license": "UNLICENSED"
+}

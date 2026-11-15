@@ -1,0 +1,12 @@
+{
+  "env": {
+    "TELEGRAM_BOT_TOKEN": "diisi sebagai GitHub Secret ATTO_CUAN_TOKEN (jangan pernah ditulis di file ini)",
+    "TELEGRAM_CHAT_ID": "diisi sebagai GitHub Secret ATTO_CUAN_CHAT",
+    "INDODAX_BASE": "https://indodax.com/api",
+    "BINANCE_BASES": ["https://api.binance.com", "https://data-api.binance.vision"],
+    "FX_BASE": "https://api.frankfurter.app"
+  },
+  "windows_local_test": {
+    "note": "Untuk uji di laptop: buat file .env lokal (TIDAK di-commit, ada di .gitignore) berisi TELEGRAM_BOT_TOKEN=... dan TELEGRAM_CHAT_ID=..."
+  }
+}
