@@ -14,14 +14,28 @@ Spesifikasi lengkap: `STRATEGI.md` v1.1 (terkunci).
 ## Menjalankan lokal (uji)
 ```
 cp .env.contoh .env   # isi TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID (jangan di-commit)
-node src/sentinel.v150.mjs   # satu siklus penuh (fetch → compute → lock → commit → monitor → kirim outbox)
+npm start                    # loop 15 menit (hosting / server yang berjalan terus)
+npm run once                 # satu siklus saja, lalu berhenti
+npm run equity -- --confirm  # konfirmasi ulang ekuitas acuan (TTL 7 hari)
 npm test                     # tes unit + e2e
 ```
 
 ## Deployment
 
-Siklus dijalankan Windows Task Scheduler (`AttoCuan-Cycle`, tiap 15 menit) lewat `run-cycle.bat`.
-Tidak ada workflow GitHub Actions dan tidak ada loop latar belakang: kedua jalur v1.3.1 sudah dihapus.
+### A. Hosting Node.js 24/7 (Botkeep dan sejenis)
+1. Hubungkan repo GitHub ini (branch `main`). `package.json` sudah ada, start command: `npm start`.
+2. Isi Environment / env var di panel — **jangan** unggah `.env`:
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+3. Start. Log console yang sehat: `START` → `CYCLE_DONE` (`errors: 0`) → `SLEEP`.
+4. `data/` (state + rantai audit) otomatis dibuat dari `seed/` saat pertama jalan.
+   `seed/` hanya dipakai bila `data/state.json` belum ada, jadi data yang sudah jalan tidak pernah ditimpa.
+5. Ekuitas acuan berumur 7 hari (`risk.equityTtlDays`). Setelah lewat, gerbang `EQUITY_STALE`
+   menahan sinyal sampai dikonfirmasi ulang: `npm run equity -- --confirm`.
+
+### B. Windows Task Scheduler (lokal)
+`AttoCuan-Cycle` tiap 15 menit lewat `run-cycle.bat`.
+Jalankan **salah satu** saja (A atau B) — dua instance akan mengirim pesan dobel ke chat yang sama.
 
 ## Deployment (riwayat v1.3.1, tidak lagi dipakai)
 1. Push repo ini ke GitHub (publik — tidak ada rahasia di kode).

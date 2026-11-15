@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/loop.mjs",
     "once": "node src/loop.mjs --once",
+    "equity": "node scripts/set-equity.mjs",
     "test": "node --test --test-reporter=spec test/",
     "verify-sources": "node scripts/verify-sources.mjs"
   },

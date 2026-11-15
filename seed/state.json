@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1.5.0",
+  "stateVersion": 44,
+  "lastEventSequenceNo": 4,
+  "lastEventHash": "fff6a9dfdb1eb8c41b4d09f894b7e94bcbd73c9794819304d91561a636e50967",
+  "systemMode": "NORMAL",
+  "operationalTimezone": "Asia/Makassar",
+  "portfolio": {
+    "equityReferenceIdr": 100000,
+    "availableCashIdr": 100000,
+    "equityUpdatedAtUtc": "2026-11-15T15:24:18.216Z",
+    "equityConfirmedAtUtc": "2026-11-15T15:24:18.239Z",
+    "peakEquityReferenceIdr": 100000,
+    "consecutiveLosses": 0,
+    "lockedUntil": {
+      "consecutiveLoss": null
+    },
+    "dailyState": {
+      "dateLocal": "2026-11-15",
+      "dailyInitialEquityIdr": null,
+      "dailyInitialRiskUnitIdr": null,
+      "realizedNetPnlIdr": 0,
+      "realizedR": 0,
+      "breakerStatus": "NORMAL"
+    }
+  },
+  "symbols": {
+    "BTCUSDT": {
+      "guardrail": {
+        "status": "NORMAL",
+        "consecutiveRecoveryCycles": 0,
+        "lastDevPct": 0.10354792480182236,
+        "changed": false
+      },
+      "lastEvaluatedAtUtc": "2026-11-15T16:34:03.685Z",
+      "lastStatus": "EVALUATED",
+      "dataReasons": []
+    },
+    "ETHUSDT": {
+      "guardrail": {
+        "status": "NORMAL",
+        "consecutiveRecoveryCycles": 0,
+        "lastDevPct": 0.2231301980550477,
+        "changed": false
+      },
+      "lastEvaluatedAtUtc": "2026-11-15T16:34:03.685Z",
+      "lastStatus": "EVALUATED",
+      "dataReasons": [
+        "DATA_UNKNOWN:eth_idr:TICKER_TIME_INVALID"
+      ]
+    }
+  },
+  "evaluations": {},
+  "signals": [],
+  "positions": [],
+  "telegram": {
+    "lastUpdateId": 0
+  },
+  "timeStatus": {},
+  "monitor": {
+    "lastCycleAtUtc": "2026-11-15T16:34:05.227Z",
+    "blindSinceUtc": null
+  },
+  "heartbeat": {
+    "lastSentAtUtc": null,
+    "sentinelLastCycleAtUtc": "2026-11-15T16:34:05.227Z",
+    "notifierLastAtUtc": null
+  },
+  "digest": {
+    "lastSentDateLocal": null
+  }
+}
