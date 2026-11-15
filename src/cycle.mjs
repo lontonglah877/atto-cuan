@@ -62,7 +62,7 @@ export async function fetchSymbolData({ collector, config, symbol, pair, nowMs }
 
   const [k1h, k4h, book, ticker, usdt] = await Promise.all([
     grab(() => collector.klines(symbol, '1h', config.candleHistory.target)),
-    grab(() => collector.klines(symbol, '4h', config.candleHistory.minClosed)),
+    grab(() => collector.klines(symbol, '4h', config.candleHistory.target)),
     grab(() => collector.bookTicker(symbol)),
     grab(() => collector.indodaxTicker(pair)),
     grab(() => collector.indodaxTicker('usdt_idr')),
@@ -77,26 +77,25 @@ export async function fetchSymbolData({ collector, config, symbol, pair, nowMs }
   if (c4h.status !== 'FRESH') result.reasons.push(`DATA_${c4h.status === 'STALE' ? 'STALE' : c4h.status === 'INVALID' ? 'INVALID' : 'UNKNOWN'}:4h`);
 
   const binanceMid = book.ok ? (book.value.bid + book.value.ask) / 2 : null;
-  const local = ticker.ok ? validateTicker({ ticker: ticker.value, nowMs, maxAgeSec: config.maxAgeSec.ticker }) : { status: 'UNKNOWN', reason: 'FETCH_FAILED' };
-  const usdtT = usdt.ok ? validateTicker({ ticker: { ...usdt.value, marketTimeMs: usdt.value.marketTimeMs }, nowMs, maxAgeSec: config.maxAgeSec.usdtIdr }) : { status: 'UNKNOWN', reason: 'FETCH_FAILED' };
-  if (local.status !== 'FRESH') result.reasons.push(`DATA_${local.status === 'STALE' ? 'STALE' : local.status === 'INVALID' ? 'INVALID' : 'UNKNOWN'}:${pair}`);
-  if (usdtT.status !== 'FRESH') result.reasons.push(`DATA_${usdtT.status === 'STALE' ? 'STALE' : usdtT.status === 'INVALID' ? 'INVALID' : 'UNKNOWN'}:usdt_idr`);
+  const local = ticker.ok ? validateTicker({ ticker: ticker.value, nowMs, maxAgeSec: config.maxAgeSec.ticker, futureToleranceMs: config.tickerFutureToleranceMs }) : { status: 'UNKNOWN', reason: 'FETCH_FAILED' };
+  const usdtT = usdt.ok ? validateTicker({ ticker: { ...usdt.value, marketTimeMs: usdt.value.marketTimeMs }, nowMs, maxAgeSec: config.maxAgeSec.usdtIdr, futureToleranceMs: config.tickerFutureToleranceMs }) : { status: 'UNKNOWN', reason: 'FETCH_FAILED' };
+  if (local.status !== 'FRESH') result.reasons.push(`DATA_${local.status}:${pair}:${local.reason || '-'}`);
+  if (usdtT.status !== 'FRESH') result.reasons.push(`DATA_${usdtT.status}:usdt_idr:${usdtT.reason || '-'}`);
 
-  const asks = book.ok && usdt.ok && local.ok
-    ? (await grab(() => collector.indodaxDepth(pair, config.maxAgeSec.orderBook)))
-    : null;
+  // Depth diambil untuk pair simbol ini; kegagalannya dilaporkan dengan penyebab aslinya.
+  const depthRes = await grab(() => collector.indodaxDepth(pair));
 
   if (!fail('klines1h', k1h) || !fail('klines4h', k4h) || !fail('book', book) || !fail('ticker', ticker) || !fail('usdt', usdt)) {
     return { ok: false, reasons: result.reasons, data: { c1h, c4h, local, usdtT, binanceMid } };
   }
 
   let depth = null;
-  if (asks && asks.ok) {
-    const d = asks.value;
+  if (depthRes.ok) {
+    const d = depthRes.value;
     depth = validateDepth(d, nowMs, config.maxAgeSec.orderBook);
     if (!depth.ok) result.reasons.push(`DATA_UNKNOWN:depth:${depth.reason}`);
   } else {
-    result.reasons.push('LIQUIDITY_INSUFFICIENT:depth_unavailable');
+    result.reasons.push(`LIQUIDITY_INSUFFICIENT:depth_fetch:${depthRes.error}`);
   }
 
   const cross = binanceMid && local.status === 'FRESH' && usdtT.status === 'FRESH'
@@ -181,7 +180,7 @@ export async function runSignalCycle({ store, collector, clock, config, strategy
       // Tidak ada trigger: hanya catat status evaluasi (tanpa pesan, tanpa gerbang).
       await store.transact((s) => {
         s.symbols = s.symbols || {};
-        s.symbols[symbol] = { ...(s.symbols[symbol] || {}), guardrail: guard, lastEvaluatedAtUtc: new Date(t).toISOString(), lastStatus: evaluation?.status || 'NO_DATA' };
+        s.symbols[symbol] = { ...(s.symbols[symbol] || {}), guardrail: guard, lastEvaluatedAtUtc: new Date(t).toISOString(), lastStatus: evaluation?.status || 'NOT_EVALUATED', dataReasons: reasons.slice(0, 6) };
         const expired = expireSignals(s, t);
         return { events: expired };
       });

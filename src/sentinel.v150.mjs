@@ -40,7 +40,7 @@ export async function runOnce({
   rawNow = null,
   log = () => {},
 } = {}) {
-  const { config, strategy, configHash, strategyHash } = await loadConfig({ dir });
+  const { config, strategy, configHash, strategyHash } = await loadConfig({ dir, env });
   await ensureDataDirs(dataDir);
 
   const clock = new Clock(rawNow ? { rawNow } : nowMs != null ? { rawNow: () => nowMs } : {});

@@ -105,13 +105,20 @@ export class StateStore {
   async init() { await ensureDataDirs(this.dataDir); }
 
   async load() {
+    let raw;
     try {
-      const raw = await readFile(this.stateFile, 'utf8');
-      return JSON.parse(raw);
+      raw = await readFile(this.stateFile, 'utf8');
     } catch (e) {
       if (e.code === 'ENOENT') return null;
       throw new Error(`STATE_UNREADABLE:${e.message}`);
     }
+    let state;
+    try { state = JSON.parse(raw); } catch (e) { throw new Error(`STATE_UNREADABLE:${e.message}`); }
+    // Fail-closed: state dari format lama tidak boleh dipakai diam-diam.
+    if (state?.schemaVersion !== '1.5.0') {
+      throw new Error(`STATE_SCHEMA_MISMATCH:${state?.schemaVersion ?? 'none'} (butuh 1.5.0; arsipkan & migrasi dulu)`);
+    }
+    return state;
   }
 
   async loadOutbox() {

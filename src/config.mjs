@@ -44,7 +44,7 @@ function checkEndpoints(list, problems, label) {
   }
 }
 
-export function validateConfig(config) {
+export function validateConfig(config, env = {}) {
   const problems = [];
   if (!config || typeof config !== 'object') return ['CONFIG_NOT_OBJECT'];
 
@@ -96,9 +96,9 @@ export function validateConfig(config) {
   if (!isNum(http.maxRequestsPerCycle) || http.maxRequestsPerCycle <= 0) problems.push('http.maxRequestsPerCycle tidak valid');
 
   if (config.telegram?.enabled === true) {
-    if (!config.telegram.allowedUserId || !config.telegram.allowedChatId) {
-      problems.push('telegram.enabled=true tetapi allowedUserId/allowedChatId kosong');
-    }
+    // Kredensial tidak disimpan di config.json (akan di-commit): dibaca dari environment/.env.
+    if (!env.TELEGRAM_BOT_TOKEN) problems.push('telegram.enabled=true tetapi TELEGRAM_BOT_TOKEN kosong di .env');
+    if (!env.TELEGRAM_CHAT_ID) problems.push('telegram.enabled=true tetapi TELEGRAM_CHAT_ID kosong di .env');
   }
   return problems;
 }
@@ -125,10 +125,10 @@ export function validateStrategy(strategy, config) {
   return problems;
 }
 
-export async function loadConfig({ configFile = 'config.json', strategyFile = 'strategy.json', dir = '.' } = {}) {
+export async function loadConfig({ configFile = 'config.json', strategyFile = 'strategy.json', dir = '.', env = {} } = {}) {
   const config = await loadJson(path.join(dir, configFile));
   const strategy = await loadJson(path.join(dir, strategyFile));
-  const problems = [...validateConfig(config), ...validateStrategy(strategy, config)];
+  const problems = [...validateConfig(config, env), ...validateStrategy(strategy, config)];
   if (problems.length) throw new ConfigInvalidError(problems);
   return {
     config,

@@ -12,6 +12,7 @@ import { buildEvent, verifyChain } from '../src/audit.mjs';
 import { validateTicker, validateCandleShape, depthWalk, updateGuardrail } from '../src/data-quality.mjs';
 import { validateConfig, validateStrategy } from '../src/config.mjs';
 import { pairSlug } from '../src/collector.mjs';
+import { parseEnv } from '../src/env.mjs';
 
 const config = JSON.parse(readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
 const strategy = JSON.parse(readFileSync(new URL('../strategy.json', import.meta.url), 'utf8'));
@@ -128,6 +129,15 @@ test('data: depth-walk menandai likuiditas tidak cukup', () => {
   assert.equal(w.insufficient, true);
 });
 
+test('data: ticker sedikit di masa depan (timestamp bulat detik) diterima; jauh di masa depan ditolak', () => {
+  const now = 1_000_000_000;
+  const near = validateTicker({ ticker: { bid: 9, ask: 10, marketTimeMs: now + 400 }, nowMs: now, maxAgeSec: 30, futureToleranceMs: 2000 });
+  assert.equal(near.status, 'FRESH', 'selisih 400 ms dalam toleransi');
+  const far = validateTicker({ ticker: { bid: 9, ask: 10, marketTimeMs: now + 60_000 }, nowMs: now, maxAgeSec: 30, futureToleranceMs: 2000 });
+  assert.equal(far.status, 'UNKNOWN', 'selisih 60 s di luar toleransi tetap ditolak');
+  assert.equal(far.reason, 'TICKER_TIME_INVALID');
+});
+
 test('data: ticker stale/invalid/crossed ditolak', () => {
   const now = 1_000_000_000;
   assert.equal(validateTicker({ ticker: { bid: 9, ask: 10, marketTimeMs: now - 1000 }, nowMs: now, maxAgeSec: 30 }).status, 'FRESH');
@@ -205,7 +215,8 @@ test('collector: slug pair Indodax tanpa garis bawah', () => {
 });
 
 test('config: config.json dan strategy.json v1.5.0 lolos validasi', () => {
-  assert.deepEqual(validateConfig(config), []);
+  const env = parseEnv(readFileSync(new URL('../.env', import.meta.url), 'utf8'));
+  assert.deepEqual(validateConfig(config, env), []);
   assert.deepEqual(validateStrategy(strategy, config), []);
 });
 
@@ -216,4 +227,22 @@ test('config: placeholder ISI_FASE0 dan endpoint kosong ditolak (fail-closed)', 
   const badStrategy = structuredClone(strategy);
   badStrategy.strategy_trend_pullback.indicator_method = 'SMA';
   assert.ok(validateStrategy(badStrategy, config).length > 0);
+});
+
+test('equity: total+cash eksplisit tidak menggandakan kas (regresi 100.000 -> 200.000)', async () => {
+  const { setEquity } = await import('../src/position-manager.mjs');
+  const state = { portfolio: { equityReferenceIdr: null, availableCashIdr: null, peakEquityReferenceIdr: null }, positions: [] };
+  setEquity(state, { totalIdr: 100000, cashIdr: 100000, nowMs: 1_000_000 });
+  assert.equal(state.portfolio.equityReferenceIdr, 100000);
+  assert.equal(state.portfolio.availableCashIdr, 100000);
+  setEquity(state, { confirm: true, nowMs: 1_000_001 });
+  assert.ok(state.portfolio.equityConfirmedAtUtc === undefined || state.portfolio.equityConfirmedAtUtc === null || typeof state.portfolio.equityConfirmedAtUtc === 'string');
+});
+
+test('equity: hanya total -> penyesuaian delta terhadap kas turunan', async () => {
+  const { setEquity } = await import('../src/position-manager.mjs');
+  const state = { portfolio: { equityReferenceIdr: 50000, availableCashIdr: 50000, peakEquityReferenceIdr: 50000 }, positions: [] };
+  setEquity(state, { totalIdr: 80000, nowMs: 1_000_000 });
+  assert.equal(state.portfolio.equityReferenceIdr, 80000);
+  assert.equal(state.portfolio.availableCashIdr, 80000);
 });

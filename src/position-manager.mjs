@@ -325,22 +325,28 @@ export function setEquity(state, { totalIdr = null, cashIdr = null, confirm = fa
   }
   if (totalIdr == null && cashIdr == null) throw new CommandError('INVALID_EQUITY', 'total/cash kosong');
 
-  const derived = (p.availableCashIdr || 0) + (state.positions || [])
-    .filter((x) => ACTIVE_POSITION_STATUSES.includes(x.status))
-    .reduce((s, x) => s + (x.costBasis?.remainingCostBasisIdr || 0), 0);
-
+  // Jika kas eksplisit diberikan, ia menjadi sumber kebenaran kas; total hanya menetapkan ekuitas.
+  // Penyesuaian otomatis (delta) hanya dipakai bila total diberikan tanpa kas.
   if (cashIdr != null) {
     if (!isNum(cashIdr) || cashIdr < 0) throw new CommandError('INVALID_EQUITY', String(cashIdr));
+    if (totalIdr != null && !isNum(totalIdr)) throw new CommandError('INVALID_EQUITY', String(totalIdr));
+    if (totalIdr != null && totalIdr < cashIdr) throw new CommandError('CASH_EXCEEDS_TOTAL');
     p.availableCashIdr = cashIdr;
-  }
-  if (totalIdr != null) {
+    if (totalIdr != null) {
+      p.equityReferenceIdr = totalIdr;
+      events.push({ kind: 'EQUITY_ADJUSTED', equityReferenceIdr: totalIdr, availableCashIdr: cashIdr, mode: 'EXPLICIT_CASH' });
+    }
+  } else if (totalIdr != null) {
     if (!isNum(totalIdr) || totalIdr < 0) throw new CommandError('INVALID_EQUITY', String(totalIdr));
     if (totalIdr < (p.availableCashIdr || 0)) throw new CommandError('CASH_EXCEEDS_TOTAL');
+    const derived = (p.availableCashIdr || 0) + (state.positions || [])
+      .filter((x) => ACTIVE_POSITION_STATUSES.includes(x.status))
+      .reduce((s, x) => s + (x.costBasis?.remainingCostBasisIdr || 0), 0);
     const delta = totalIdr - derived;
     p.equityReferenceIdr = totalIdr;
     if (delta > 0) p.availableCashIdr = (p.availableCashIdr || 0) + delta;
     else if (delta < 0) p.availableCashIdr = Math.max((p.availableCashIdr || 0) + delta, 0);
-    events.push({ kind: 'EQUITY_ADJUSTED', equityReferenceIdr: totalIdr, deltaIdr: delta, derivedIdr: derived });
+    events.push({ kind: 'EQUITY_ADJUSTED', equityReferenceIdr: totalIdr, deltaIdr: delta, derivedIdr: derived, mode: 'DELTA' });
   }
   if (p.equityReferenceIdr != null && (!isNum(p.peakEquityReferenceIdr) || p.equityReferenceIdr > p.peakEquityReferenceIdr)) {
     p.peakEquityReferenceIdr = p.equityReferenceIdr;

@@ -39,7 +39,7 @@ export async function runMonitorCycle({ store, collector, config, clock, log = (
   for (const p of positions) {
     try {
       const ticker = await collector.indodaxTicker(p.localPair);
-      const v = validateTicker({ ticker, nowMs: t, maxAgeSec: config.maxAgeSec.ticker });
+      const v = validateTicker({ ticker, nowMs: t, maxAgeSec: config.maxAgeSec.ticker, futureToleranceMs: config.tickerFutureToleranceMs });
       snaps[p.symbol] = { status: v.status, bid: v.bid, ask: v.ask, last: v.last, timeMs: v.marketTimeMs };
       if (v.status !== 'FRESH') dataOk = false;
     } catch (e) {

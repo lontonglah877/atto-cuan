@@ -26,6 +26,7 @@
     "orderBook": 30,
     "usdtIdr": 30
   },
+  "tickerFutureToleranceMs": 2000,
   "candleGraceSec": {
     "1m": 150,
     "1h": 900,
@@ -151,7 +152,7 @@
     "digestLocalTime": "08:00"
   },
   "telegram": {
-    "enabled": false,
+    "enabled": true,
     "allowedUserId": null,
     "allowedChatId": null,
     "rateLimitPerMinute": 20,

@@ -2,7 +2,8 @@
 // Membuktikan alur utuh berjalan dan audit berantai tetap valid.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, cp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, cp, rm, readFile, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runOnce } from '../src/sentinel.v150.mjs';
@@ -34,6 +35,9 @@ test('runOnce: alur utuh tanpa data sah -> fail-closed, tidak ada sinyal, audit 
   try {
     await cp('config.json', path.join(dir, 'config.json'));
     await cp('strategy.json', path.join(dir, 'strategy.json'));
+    const cfg = JSON.parse(readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    cfg.telegram.enabled = false; // uji ini fokus pada pipeline, bukan pada kredensial
+    await writeFile(path.join(dir, 'config.json'), JSON.stringify(cfg));
     const logs = [];
     const r = await runOnce({ dir, dataDir: path.join(dir, 'data'), env: {}, transport: { send: async () => ({ ok: true, messageId: 1 }), name: 'fake' }, fetchImpl: fakeFetch, rawNow: stepClock(), log: (k, d) => logs.push({ k, ...d }) });
     assert.equal(r.skipped, undefined, JSON.stringify(r));
@@ -50,15 +54,32 @@ test('runOnce: alur utuh tanpa data sah -> fail-closed, tidak ada sinyal, audit 
   }
 });
 
-test('runOnce: token dan chat ID kosong -> dry-run, bukan error', async () => {
+test('runOnce: telegram aktif tanpa kredensial -> menolak start (fail-closed), bukan diam-diam dry-run', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'atto-e2e-'));
   try {
     await cp('config.json', path.join(dir, 'config.json'));
     await cp('strategy.json', path.join(dir, 'strategy.json'));
-    const r = await runOnce({ dir, dataDir: path.join(dir, 'data'), env: {}, fetchImpl: fakeFetch, nowMs: NOW });
+    await assert.rejects(
+      runOnce({ dir, dataDir: path.join(dir, 'data'), env: {}, fetchImpl: fakeFetch, rawNow: stepClock() }),
+      (e) => e.code === 'CONFIG_INVALID' && e.problems.some((p) => p.includes('TELEGRAM_BOT_TOKEN')),
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('runOnce: telegram nonaktif -> dry-run tanpa kredensial', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'atto-e2e-'));
+  try {
+    const cfg = JSON.parse(readFileSync('config.json', 'utf8'));
+    cfg.telegram.enabled = false;
+    await writeFile(path.join(dir, 'config.json'), JSON.stringify(cfg));
+    await cp('strategy.json', path.join(dir, 'strategy.json'));
+    const r = await runOnce({ dir, dataDir: path.join(dir, 'data'), env: {}, fetchImpl: fakeFetch, rawNow: stepClock() });
     assert.equal(r.skipped, undefined);
     assert.equal(r.notifier.failed, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
+

@@ -61,8 +61,12 @@ export function validateCandles({ candles, nowMs, timeframeMs, minCandles = 500,
   return { ...base, status: STATUS.FRESH, closed, dropped, latestCloseTime, ageMs };
 }
 
-export function validateTicker({ ticker, nowMs, maxAgeSec }) {
-  const ageMs = nowMs - ticker.marketTimeMs;
+export function validateTicker({ ticker, nowMs, maxAgeSec, futureToleranceMs = 2000 }) {
+  const rawAgeMs = nowMs - ticker.marketTimeMs;
+  // Indodax memberi timestamp bulat detik: ticker "segar" bisa tampak beberapa ratus ms di masa depan.
+  // Di dalam toleransi dianggap umur 0; di luar toleransi tetap ditolak (fail-closed).
+  const withinTolerance = rawAgeMs < 0 && rawAgeMs >= -futureToleranceMs;
+  const ageMs = withinTolerance ? 0 : rawAgeMs;
   const base = { ...ticker, ageMs };
   if (!isFinitePositive(ticker.bid) || !isFinitePositive(ticker.ask)) return { ...base, status: STATUS.INVALID, reason: 'TICKER_INVALID' };
   if (ticker.ask < ticker.bid) return { ...base, status: STATUS.INVALID, reason: 'TICKER_CROSSED' };
