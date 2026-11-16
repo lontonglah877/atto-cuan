@@ -13,6 +13,7 @@ import { runMonitorCycle } from './monitor.mjs';
 import { drainOutbox, NullTransport } from './notifier.mjs';
 import { TelegramTransport, redact } from './telegram.mjs';
 import { renderHeartbeat, renderSystem } from './messages.mjs';
+import { maybeSendDaily } from './daily-report.mjs';
 import { enqueue, PRIORITY } from './outbox.mjs';
 import { ensureDataDirs } from './audit.mjs';
 
@@ -58,30 +59,39 @@ export async function runOnce({
 
   const held = await locks.acquire(['instance']);
   if (!held.ok) return { skipped: 'LOCK_BUSY', lock: held.failed };
-  const report = { at: null, clock: null, signal: null, monitor: null, notifier: null, errors: [] };
+  const report = { at: null, clock: null, signal: null, monitor: null, daily: null, notifier: null, errors: [] };
+
+  // Setiap tahap berdiri sendiri: satu tahap gagal (mis. jaringan putus) tidak boleh
+  // membatalkan laporan harian atau pengiriman outbox yang sudah menunggu.
+  const step = async (name, fn) => {
+    try { return await fn(); } catch (e) {
+      const msg = redact(String(e?.message || e), env.TELEGRAM_BOT_TOKEN);
+      report.errors.push(`${name}:${msg}`);
+      log('STEP_FAILED', { step: name, error: msg });
+      return null;
+    }
+  };
+
   try {
     // 1. Jam. Gagal sinkron = tidak ada keputusan baru hari ini.
-    const sync = await syncClock({ collector, clock, config });
-    report.clock = sync.ok ? { ok: true, offsetMs: sync.offsetMs } : { ok: false, reason: sync.reason };
-    if (!sync.ok) {
-      log('CLOCK_UNTRUSTED', report.clock);
-      // Jam tidak tepercaya: jangan terbitkan sinyal, tetapi tetap pantau posisi jika memungkinkan.
-    }
+    const sync = await step('clock', () => syncClock({ collector, clock, config }));
+    if (!sync) report.clock = { ok: false, reason: 'CLOCK_CHECK_FAILED' };
+    else report.clock = sync.ok ? { ok: true, offsetMs: sync.offsetMs } : { ok: false, reason: sync.reason };
+    if (!report.clock.ok) log('CLOCK_UNTRUSTED', report.clock);
 
-    if (sync.ok) {
-      report.signal = await runSignalCycle({
+    if (report.clock.ok) {
+      report.signal = await step('signal', () => runSignalCycle({
         store, collector, clock, config, strategy, strategyHashHex: strategyHash, configHashHex: configHash, log,
-      });
+      }));
     }
 
-    report.monitor = await runMonitorCycle({ store, collector, config, clock, log });
+    report.monitor = await step('monitor', () => runMonitorCycle({ store, collector, config, clock, log }));
+
+    // 2. Laporan harian: digest 07:00 & heartbeat 08:00 (waktu lokal), sekali per tanggal.
+    report.daily = await step('daily', () => maybeSendDaily({ store, config, clock, log }));
+
     report.at = new Date(clock.trustedNow()).toISOString();
-    report.notifier = await drainOutbox({ store, transport: tx, config, clock, log });
-    return report;
-  } catch (e) {
-    const msg = redact(e.message || e, env.TELEGRAM_BOT_TOKEN);
-    report.errors.push(msg);
-    log('CYCLE_ERROR', { error: msg });
+    report.notifier = await step('notifier', () => drainOutbox({ store, transport: tx, config, clock, log }));
     return report;
   } finally {
     await held.release();
